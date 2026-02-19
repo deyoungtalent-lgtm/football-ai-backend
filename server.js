@@ -1,50 +1,34 @@
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
-const cors = require("cors");
 
 const app = express();
-
-app.use(cors());
 app.use(express.json());
 
-const API_KEY = process.env.SOCCER_API_KEY; // ✅ Standard name
-const BASE_URL = "https://api.soccerdataapi.com";
+const API_KEY = process.env.API_FOOTBALL_KEY;
+const BASE_URL = "https://v3.football.api-sports.io";
 
-// Root check
 app.get("/", (req, res) => {
-  res.send("Football AI Running");
+  res.send("Football AI Running with API-Football");
 });
 
-// Fixtures route
 app.get("/fixtures", async (req, res) => {
   try {
-    if (!API_KEY) {
-      return res.status(400).json({ error: "API key missing" });
-    }
-
-    const today = new Date().toISOString().split("T")[0];
-
     const response = await axios.get(`${BASE_URL}/fixtures`, {
       headers: {
-        "X-API-KEY": API_KEY
+        "x-apisports-key": API_KEY
       },
       params: {
-        date: today
+        date: new Date().toISOString().split("T")[0]
       }
     });
 
     res.json(response.data);
   } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({
-      error: "Failed to fetch fixtures",
-      details: error.response?.data || error.message
-    });
+    console.log(error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to fetch fixtures" });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
