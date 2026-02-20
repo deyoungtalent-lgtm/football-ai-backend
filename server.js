@@ -5,19 +5,11 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-// Render provides this automatically
-const PORT = process.env.PORT;
+// Safe fallback for PORT
+const PORT = process.env.PORT || 10000;
 
-// Your API-Football key (must be added in Render Environment Variables)
+// API key
 const API_KEY = process.env.API_FOOTBALL_KEY;
-
-if (!PORT) {
-  console.error("PORT is not defined");
-}
-
-if (!API_KEY) {
-  console.error("API_FOOTBALL_KEY is missing");
-}
 
 app.get("/", (req, res) => {
   res.send("Football AI Running with API-Football");
@@ -25,6 +17,12 @@ app.get("/", (req, res) => {
 
 app.get("/fixtures", async (req, res) => {
   try {
+    if (!API_KEY) {
+      return res.status(500).json({
+        error: "API_FOOTBALL_KEY not set in environment variables"
+      });
+    }
+
     const today = new Date().toISOString().split("T")[0];
 
     const response = await axios.get(
@@ -49,7 +47,7 @@ app.get("/fixtures", async (req, res) => {
   }
 });
 
-// VERY IMPORTANT: Bind to 0.0.0.0
+// IMPORTANT: Bind properly for Render
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
