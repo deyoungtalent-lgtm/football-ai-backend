@@ -1,8 +1,8 @@
 app.get("/predictions", async (req, res) => {
   try {
     const headers = {
-      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
-    };
+  "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
+};
 
     const upcomingRes = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
