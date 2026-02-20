@@ -1,8 +1,23 @@
+const express = require("express");
+const axios = require("axios");
+require("dotenv").config();
+
+const app = express();
+app.use(express.json());
+
+// ✅ FIXED PORT FOR RENDER
+const PORT = process.env.PORT || 10000;
+
+// Health check route
+app.get("/", (req, res) => {
+  res.send("Football AI Backend Running ✅");
+});
+
 app.get("/predictions", async (req, res) => {
   try {
     const headers = {
-  "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
-};
+      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY=5c6de9b9e61f4673a53068bbb52ca925
+    };
 
     const upcomingRes = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
@@ -39,8 +54,8 @@ app.get("/predictions", async (req, res) => {
 
       matches.forEach(m => {
         const isHome = m.homeTeam.id === teamId;
-        const homeGoals = m.score.fullTime.home ?? 0;
-        const awayGoals = m.score.fullTime.away ?? 0;
+        const homeGoals = m.score.fullTime?.home ?? 0;
+        const awayGoals = m.score.fullTime?.away ?? 0;
 
         if (isHome && homeGoals > awayGoals) wins++;
         if (!isHome && awayGoals > homeGoals) wins++;
@@ -75,12 +90,10 @@ app.get("/predictions", async (req, res) => {
 
       if (homeScore > awayScore && homeFormWins >= 3) {
         prediction = "Home Win";
-        confidence = Math.min(80, 55 + Math.round(difference * 10)) + "%";
-      }
-
-      if (awayScore > homeScore && awayFormWins >= 3) {
+        confidence = Math.min(85, 55 + Math.round(difference * 10)) + "%";
+      } else if (awayScore > homeScore && awayFormWins >= 3) {
         prediction = "Away Win";
-        confidence = Math.min(80, 55 + Math.round(difference * 10)) + "%";
+        confidence = Math.min(85, 55 + Math.round(difference * 10)) + "%";
       }
 
       return {
@@ -102,4 +115,9 @@ app.get("/predictions", async (req, res) => {
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Prediction error" });
   }
+});
+
+// ✅ THIS IS WHAT FIXES RENDER PORT ERROR
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
