@@ -1,60 +1,3 @@
-require("dotenv").config();
-
-const express = require("express");
-const axios = require("axios");
-
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 10000;
-
-/* ===============================
-   SIMPLE WORKING PREDICTION MODEL
-================================= */
-
-function calculateTeamAverage(teamId, matches) {
-  const lastMatches = matches
-    .filter(m =>
-      m.homeTeam.id === teamId || m.awayTeam.id === teamId
-    )
-    .slice(-5);
-
-  if (lastMatches.length === 0) {
-    return { scored: 1.2, conceded: 1.2 };
-  }
-
-  let scored = 0;
-  let conceded = 0;
-
-  lastMatches.forEach(match => {
-    const isHome = match.homeTeam.id === teamId;
-
-    const homeGoals = match.score.fullTime.home ?? 0;
-    const awayGoals = match.score.fullTime.away ?? 0;
-
-    if (isHome) {
-      scored += homeGoals;
-      conceded += awayGoals;
-    } else {
-      scored += awayGoals;
-      conceded += homeGoals;
-    }
-  });
-
-  return {
-    scored: scored / lastMatches.length,
-    conceded: conceded / lastMatches.length
-  };
-}
-
-/* ===============================
-   ROUTES
-================================= */
-
-app.get("/", (req, res) => {
-  res.send("Football AI Running ✅");
-});
-
 app.get("/predictions", async (req, res) => {
   try {
     const headers = {
@@ -74,40 +17,82 @@ app.get("/predictions", async (req, res) => {
     const upcomingMatches = upcomingRes.data.matches.slice(0, 5);
     const finishedMatches = finishedRes.data.matches;
 
+    function getLast5(teamId) {
+      return finishedMatches
+        .filter(m =>
+          m.homeTeam.id === teamId || m.awayTeam.id === teamId
+        )
+        .slice(-5);
+    }
+
+    function getH2H(homeId, awayId) {
+      return finishedMatches
+        .filter(m =>
+          (m.homeTeam.id === homeId && m.awayTeam.id === awayId) ||
+          (m.homeTeam.id === awayId && m.awayTeam.id === homeId)
+        )
+        .slice(-5);
+    }
+
+    function countWins(teamId, matches) {
+      let wins = 0;
+
+      matches.forEach(m => {
+        const isHome = m.homeTeam.id === teamId;
+        const homeGoals = m.score.fullTime.home ?? 0;
+        const awayGoals = m.score.fullTime.away ?? 0;
+
+        if (isHome && homeGoals > awayGoals) wins++;
+        if (!isHome && awayGoals > homeGoals) wins++;
+      });
+
+      return wins;
+    }
+
     const predictions = upcomingMatches.map(match => {
 
-      const home = calculateTeamAverage(
-        match.homeTeam.id,
-        finishedMatches
-      );
+      const homeId = match.homeTeam.id;
+      const awayId = match.awayTeam.id;
 
-      const away = calculateTeamAverage(
-        match.awayTeam.id,
-        finishedMatches
-      );
+      const homeLast5 = getLast5(homeId);
+      const awayLast5 = getLast5(awayId);
+      const h2h = getH2H(homeId, awayId);
 
-      const homeStrength = home.scored - home.conceded + 0.3; // small home advantage
-      const awayStrength = away.scored - away.conceded;
+      const homeFormWins = countWins(homeId, homeLast5);
+      const awayFormWins = countWins(awayId, awayLast5);
+
+      const homeH2HWins = countWins(homeId, h2h);
+      const awayH2HWins = countWins(awayId, h2h);
+
+      // Weighted scoring
+      const homeScore = (homeFormWins * 0.6) + (homeH2HWins * 0.4);
+      const awayScore = (awayFormWins * 0.6) + (awayH2HWins * 0.4);
 
       let prediction = "Draw";
-      let confidence = 50;
+      let confidence = "50%";
 
-      if (homeStrength > awayStrength) {
+      const difference = Math.abs(homeScore - awayScore);
+
+      if (homeScore > awayScore && homeFormWins >= 3) {
         prediction = "Home Win";
-        confidence = 60;
+        confidence = Math.min(80, 55 + Math.round(difference * 10)) + "%";
       }
 
-      if (awayStrength > homeStrength) {
+      if (awayScore > homeScore && awayFormWins >= 3) {
         prediction = "Away Win";
-        confidence = 60;
+        confidence = Math.min(80, 55 + Math.round(difference * 10)) + "%";
       }
 
       return {
         competition: match.competition.name,
         homeTeam: match.homeTeam.name,
         awayTeam: match.awayTeam.name,
+        homeFormWins,
+        awayFormWins,
+        homeH2HWins,
+        awayH2HWins,
         prediction,
-        confidence: confidence + "%"
+        confidence
       };
     });
 
@@ -115,14 +100,6 @@ app.get("/predictions", async (req, res) => {
 
   } catch (error) {
     console.error(error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to generate predictions" });
+    res.status(500).json({ error: "Prediction error" });
   }
-});
-
-/* ===============================
-   START SERVER
-================================= */
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
 });
