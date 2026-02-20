@@ -1,7 +1,7 @@
 app.get("/predictions", async (req, res) => {
   try {
     const headers = {
-      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY=5c6de9b9e61f4673a53068bbb52ca925
+      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
     };
 
     const upcomingRes = await axios.get(
