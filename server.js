@@ -159,7 +159,7 @@ app.get("/predictions", async (req, res) => {
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Prediction error" });
   }
-});};
+});
 
     const upcomingRes = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
@@ -249,7 +249,6 @@ app.get("/predictions", async (req, res) => {
         prediction,
         confidence
       };
-    });
 
     res.json(predictions);
 
