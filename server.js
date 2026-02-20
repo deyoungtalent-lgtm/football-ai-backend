@@ -8,22 +8,19 @@ app.use(express.json());
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.send("Football AI: Structural Mismatch Engine LIVE ✅");
+  res.send("Football AI Running ✅");
 });
-
-// ======================================================
-// PREDICTIONS ROUTE
-// ======================================================
 
 app.get("/predictions", async (req, res) => {
   try {
+
     const headers = {
       "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
     };
 
-    // ===============================
+    // ==============================
     // FETCH UPCOMING MATCHES
-    // ===============================
+    // ==============================
     const upcomingRes = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
       { headers }
@@ -31,9 +28,9 @@ app.get("/predictions", async (req, res) => {
 
     const upcomingMatches = upcomingRes.data.matches.slice(0, 15);
 
-    // ===============================
-    // FETCH LAST 90 DAYS (10-DAY CHUNKS)
-    // ===============================
+    // ==============================
+    // FETCH LAST 90 DAYS (10 DAY CHUNKS)
+    // ==============================
     let finishedMatches = [];
     let endDate = new Date();
 
@@ -50,7 +47,6 @@ app.get("/predictions", async (req, res) => {
       );
 
       finishedMatches.push(...response.data.matches);
-
       endDate = new Date(startDate);
     }
 
@@ -59,25 +55,27 @@ app.get("/predictions", async (req, res) => {
       ...new Map(finishedMatches.map(m => [m.id, m])).values()
     ];
 
-    // ===============================
+    // ==============================
     // HELPERS
-    // ===============================
-    const getLast5 = (teamId) =>
-      finishedMatches
+    // ==============================
+    function getLast5(teamId) {
+      return finishedMatches
         .filter(m => m.homeTeam.id === teamId || m.awayTeam.id === teamId)
         .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
         .slice(0, 5);
+    }
 
-    const getH2H = (hId, aId) =>
-      finishedMatches
+    function getH2H(homeId, awayId) {
+      return finishedMatches
         .filter(m =>
-          (m.homeTeam.id === hId && m.awayTeam.id === aId) ||
-          (m.homeTeam.id === aId && m.awayTeam.id === hId)
+          (m.homeTeam.id === homeId && m.awayTeam.id === awayId) ||
+          (m.homeTeam.id === awayId && m.awayTeam.id === homeId)
         )
         .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
         .slice(0, 5);
+    }
 
-    const analyzeTeam = (teamId, matches) => {
+    function analyzeTeam(teamId, matches) {
       let wins = 0;
       let losses = 0;
 
@@ -85,7 +83,6 @@ app.get("/predictions", async (req, res) => {
         if (!m.score || !m.score.fullTime) return;
 
         const isHome = m.homeTeam.id === teamId;
-
         const homeGoals = m.score.fullTime.home ?? 0;
         const awayGoals = m.score.fullTime.away ?? 0;
 
@@ -93,77 +90,80 @@ app.get("/predictions", async (req, res) => {
         const conceded = isHome ? awayGoals : homeGoals;
 
         if (scored > conceded) wins++;
-        else if (scored < conceded) losses++;
+        if (scored < conceded) losses++;
       });
 
       return { wins, losses };
-    };
+    }
 
-    // ===============================
-    // PREDICTION ENGINE (UNCHANGED)
-    // ===============================
+    // ==============================
+    // PREDICTION ENGINE
+    // ==============================
     const predictions = upcomingMatches.map(match => {
 
-      const hId = match.homeTeam.id;
-      const aId = match.awayTeam.id;
+      const homeId = match.homeTeam.id;
+      const awayId = match.awayTeam.id;
 
-      const homeForm = analyzeTeam(hId, getLast5(hId));
-      const awayForm = analyzeTeam(aId, getLast5(aId));
+      const homeForm = analyzeTeam(homeId, getLast5(homeId));
+      const awayForm = analyzeTeam(awayId, getLast5(awayId));
 
-      const homeH2H = analyzeTeam(hId, getH2H(hId, aId));
-      const awayH2H = analyzeTeam(aId, getH2H(hId, aId));
+      const homeH2H = analyzeTeam(homeId, getH2H(homeId, awayId));
+      const awayH2H = analyzeTeam(awayId, getH2H(homeId, awayId));
 
-      const homeMeetsCriteria =
+      // ===== YOUR EXACT RULES =====
+
+      const homeQualified =
         homeForm.wins >= 3 &&
-        homeH2H.wins >= 3 &&
+        homeH2H.wins >= 3 && homeH2H.wins <= 5 &&
         awayForm.losses >= 3 &&
-        awayH2H.losses >= 3;
+        awayH2H.losses >= 3 && awayH2H.losses <= 5;
 
-      const awayMeetsCriteria =
+      const awayQualified =
         awayForm.wins >= 3 &&
-        awayH2H.wins >= 3 &&
+        awayH2H.wins >= 3 && awayH2H.wins <= 5 &&
         homeForm.losses >= 3 &&
-        homeH2H.losses >= 3;
+        homeH2H.losses >= 3 && homeH2H.losses <= 5;
 
-      let verdict = "Searching...";
+      let prediction = "No Edge";
       let rating = 0;
 
-      if (homeMeetsCriteria || awayMeetsCriteria) {
+      if (homeQualified || awayQualified) {
 
-        const hScore = homeForm.wins + homeH2H.wins;
-        const aScore = awayForm.wins + awayH2H.wins;
+        const homeCombined = homeForm.wins + homeH2H.wins;
+        const awayCombined = awayForm.wins + awayH2H.wins;
 
-        if (hScore > aScore) {
-          verdict = `${match.homeTeam.name} to Win`;
-          rating = Math.min(30 + (hScore * 7), 100);
-        } else if (aScore > hScore) {
-          verdict = `${match.awayTeam.name} to Win`;
-          rating = Math.min(30 + (aScore * 7), 100);
+        if (homeCombined > awayCombined) {
+          prediction = "Home Win";
+          rating = Math.min(30 + (homeCombined * 10), 100);
+        }
+        else if (awayCombined > homeCombined) {
+          prediction = "Away Win";
+          rating = Math.min(30 + (awayCombined * 10), 100);
         }
       }
 
       return {
-        match: `${match.homeTeam.name} vs ${match.awayTeam.name}`,
-        prediction: verdict,
-        rating: `${rating}/100`,
-        accuracy_bracket: "90-95%",
-        market_coverage: "6-8 Candles (15m TF)"
+        competition: match.competition.name,
+        homeTeam: match.homeTeam.name,
+        awayTeam: match.awayTeam.name,
+        homeFormWins: homeForm.wins,
+        awayFormWins: awayForm.wins,
+        homeH2HWins: homeH2H.wins,
+        awayH2HWins: awayH2H.wins,
+        prediction,
+        rating: `${rating}%`
       };
 
-    }).filter(p => p.rating !== "0/100");
+    }).filter(p => p.prediction !== "No Edge");
 
-    res.json({ success: true, signals: predictions });
+    res.json(predictions);
 
   } catch (error) {
     console.error(error.response?.data || error.message);
-    res.status(500).json({ error: "Structural Mismatch in Data Fetching" });
+    res.status(500).json({ error: "Prediction error" });
   }
 });
 
-// ======================================================
-// START SERVER
-// ======================================================
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Ruthless Engine running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
