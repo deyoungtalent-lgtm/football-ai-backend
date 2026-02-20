@@ -1,15 +1,19 @@
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
+const path = require("path");
 
 const app = express();
 app.use(express.json());
 
+// ✅ Serve static files from public folder
+app.use(express.static("public"));
+
 const PORT = process.env.PORT || 10000;
 
-// Home route
+// ✅ Homepage route (loads index.html)
 app.get("/", (req, res) => {
-  res.send("Football AI Backend Running");
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Matches route
