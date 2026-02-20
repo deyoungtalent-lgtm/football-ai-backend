@@ -7,6 +7,13 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
+// ==============================
+// SIMPLE MEMORY CACHE
+// ==============================
+let cachedFinishedMatches = [];
+let lastFetchTime = 0;
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+
 app.get("/", (req, res) => {
   res.send("Football AI Running ✅");
 });
@@ -19,7 +26,7 @@ app.get("/predictions", async (req, res) => {
     };
 
     // ==============================
-    // FETCH UPCOMING MATCHES
+    // UPCOMING MATCHES (1 call)
     // ==============================
     const upcomingRes = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
@@ -29,31 +36,27 @@ app.get("/predictions", async (req, res) => {
     const upcomingMatches = upcomingRes.data.matches.slice(0, 15);
 
     // ==============================
-    // FETCH LAST 90 DAYS (10 DAY CHUNKS)
+    // FINISHED MATCHES (CACHED)
     // ==============================
-    let finishedMatches = [];
-    let endDate = new Date();
+    if (Date.now() - lastFetchTime > CACHE_DURATION) {
 
-    for (let i = 0; i < 9; i++) {
-      let startDate = new Date(endDate);
-      startDate.setDate(startDate.getDate() - 10);
+      const today = new Date();
+      const past = new Date();
+      past.setDate(past.getDate() - 10); // free plan safe
 
-      const dateFrom = startDate.toISOString().split("T")[0];
-      const dateTo = endDate.toISOString().split("T")[0];
+      const dateFrom = past.toISOString().split("T")[0];
+      const dateTo = today.toISOString().split("T")[0];
 
-      const response = await axios.get(
+      const finishedRes = await axios.get(
         `https://api.football-data.org/v4/matches?status=FINISHED&dateFrom=${dateFrom}&dateTo=${dateTo}`,
         { headers }
       );
 
-      finishedMatches.push(...response.data.matches);
-      endDate = new Date(startDate);
+      cachedFinishedMatches = finishedRes.data.matches;
+      lastFetchTime = Date.now();
     }
 
-    // Remove duplicates
-    finishedMatches = [
-      ...new Map(finishedMatches.map(m => [m.id, m])).values()
-    ];
+    const finishedMatches = cachedFinishedMatches;
 
     // ==============================
     // HELPERS
@@ -97,7 +100,7 @@ app.get("/predictions", async (req, res) => {
     }
 
     // ==============================
-    // PREDICTION ENGINE
+    // PREDICTION ENGINE (UNCHANGED)
     // ==============================
     const predictions = upcomingMatches.map(match => {
 
@@ -109,8 +112,6 @@ app.get("/predictions", async (req, res) => {
 
       const homeH2H = analyzeTeam(homeId, getH2H(homeId, awayId));
       const awayH2H = analyzeTeam(awayId, getH2H(homeId, awayId));
-
-      // ===== YOUR EXACT RULES =====
 
       const homeQualified =
         homeForm.wins >= 3 &&
@@ -160,7 +161,7 @@ app.get("/predictions", async (req, res) => {
 
   } catch (error) {
     console.error(error.response?.data || error.message);
-    res.status(500).json({ error: "Prediction error" });
+    res.status(500).json({ error: error.response?.data || error.message });
   }
 });
 
