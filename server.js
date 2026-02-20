@@ -13,9 +13,11 @@ app.get("/", (req, res) => {
 
 app.get("/predictions", async (req, res) => {
   try {
-    const headers = { "X-Auth-Token": process.env.FOOTBALL_DATA_KEY };
+    const headers = { 
+      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY 
+    };
 
-    // Fetching data for analysis
+    // Fetching data
     const today = new Date();
     const past = new Date();
     past.setMonth(past.getMonth() - 3);
@@ -23,51 +25,93 @@ app.get("/predictions", async (req, res) => {
     const dateFrom = past.toISOString().split("T")[0];
     const dateTo = today.toISOString().split("T")[0];
 
-    const upcomingRes = await axios.get("https://api.football-data.org/v4/matches?status=SCHEDULED", { headers });
-    const finishedRes = await axios.get(`https://api.football-data.org/v4/matches?status=FINISHED&dateFrom=${dateFrom}&dateTo=${dateTo}`, { headers });
+    const upcomingRes = await axios.get(
+      "https://api.football-data.org/v4/matches?status=SCHEDULED",
+      { headers }
+    );
+
+    const finishedRes = await axios.get(
+      `https://api.football-data.org/v4/matches?status=FINISHED&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+      { headers }
+    );
 
     const upcomingMatches = upcomingRes.data.matches.slice(0, 15);
     const finishedMatches = finishedRes.data.matches;
 
-    // Helper functions for data extraction
-    const getLast5 = (teamId) => finishedMatches.filter(m => m.homeTeam.id === teamId || m.awayTeam.id === teamId).sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate)).slice(0, 5);
-    const getH2H = (hId, aId) => finishedMatches.filter(m => (m.homeTeam.id === hId && m.awayTeam.id === aId) || (m.homeTeam.id === aId && m.awayTeam.id === hId)).slice(0, 5);
+    // Helpers
+    const getLast5 = (teamId) =>
+      finishedMatches
+        .filter(m => m.homeTeam.id === teamId || m.awayTeam.id === teamId)
+        .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
+        .slice(0, 5);
+
+    const getH2H = (hId, aId) =>
+      finishedMatches
+        .filter(m =>
+          (m.homeTeam.id === hId && m.awayTeam.id === aId) ||
+          (m.homeTeam.id === aId && m.awayTeam.id === hId)
+        )
+        .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
+        .slice(0, 5);
 
     const analyzeTeam = (teamId, matches) => {
-      let wins = 0, losses = 0;
+      let wins = 0;
+      let losses = 0;
+
       matches.forEach(m => {
+        if (!m.score || !m.score.fullTime) return;
+
         const isHome = m.homeTeam.id === teamId;
-        const scored = isHome ? (m.score.fullTime.home ?? 0) : (m.score.fullTime.away ?? 0);
-        const conceded = isHome ? (m.score.fullTime.away ?? 0) : (m.score.fullTime.home ?? 0);
+
+        const homeGoals = m.score.fullTime.home ?? 0;
+        const awayGoals = m.score.fullTime.away ?? 0;
+
+        const scored = isHome ? homeGoals : awayGoals;
+        const conceded = isHome ? awayGoals : homeGoals;
+
         if (scored > conceded) wins++;
         else if (scored < conceded) losses++;
       });
+
       return { wins, losses };
     };
 
     const predictions = upcomingMatches.map(match => {
-      const hId = match.homeTeam.id, aId = match.awayTeam.id;
+
+      const hId = match.homeTeam.id;
+      const aId = match.awayTeam.id;
 
       const homeForm = analyzeTeam(hId, getLast5(hId));
       const awayForm = analyzeTeam(aId, getLast5(aId));
+
       const homeH2H = analyzeTeam(hId, getH2H(hId, aId));
       const awayH2H = analyzeTeam(aId, getH2H(hId, aId));
 
-      // ✅ RUTHLESS LOGIC CHECKLIST
-      const homeMeetsCriteria = homeForm.wins >= 3 && homeH2H.wins >= 3 && awayForm.losses >= 3 && awayH2H.losses >= 3;
-      const awayMeetsCriteria = awayForm.wins >= 3 && awayH2H.wins >= 3 && homeForm.losses >= 3 && homeH2H.losses >= 3;
+      // ✅ STRICT REQUIREMENT LOGIC
+      const homeMeetsCriteria =
+        homeForm.wins >= 3 &&
+        homeH2H.wins >= 3 &&
+        awayForm.losses >= 3 &&
+        awayH2H.losses >= 3;
+
+      const awayMeetsCriteria =
+        awayForm.wins >= 3 &&
+        awayH2H.wins >= 3 &&
+        homeForm.losses >= 3 &&
+        homeH2H.losses >= 3;
 
       let verdict = "Searching...";
       let rating = 0;
 
       if (homeMeetsCriteria || awayMeetsCriteria) {
+
         const hScore = homeForm.wins + homeH2H.wins;
         const aScore = awayForm.wins + awayH2H.wins;
 
         if (hScore > aScore) {
           verdict = `${match.homeTeam.name} to Win`;
-          rating = Math.min(30 + (hScore * 7), 100); 
-        } else {
+          rating = Math.min(30 + (hScore * 7), 100);
+        } else if (aScore > hScore) {
           verdict = `${match.awayTeam.name} to Win`;
           rating = Math.min(30 + (aScore * 7), 100);
         }
@@ -80,17 +124,18 @@ app.get("/predictions", async (req, res) => {
         accuracy_bracket: "90-95%",
         market_coverage: "6-8 Candles (15m TF)"
       };
+
     }).filter(p => p.rating !== "0/100");
 
     res.json({ success: true, signals: predictions });
 
   } catch (error) {
+    console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Structural Mismatch in Data Fetching" });
   }
 });
 
-// ✅ CRITICAL RENDER FIX: Bind to 0.0.0.0
+// Render binding
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Ruthless Engine running on port ${PORT}`);
 });
-  
