@@ -5,11 +5,18 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
+// Render provides this automatically
+const PORT = process.env.PORT;
+
+// Your API-Football key (must be added in Render Environment Variables)
 const API_KEY = process.env.API_FOOTBALL_KEY;
-const BASE_URL = "https://v3.football.api-sports.io";
+
+if (!PORT) {
+  console.error("PORT is not defined");
+}
 
 if (!API_KEY) {
-  console.error("API_FOOTBALL_KEY is missing in Environment Variables");
+  console.error("API_FOOTBALL_KEY is missing");
 }
 
 app.get("/", (req, res) => {
@@ -20,14 +27,17 @@ app.get("/fixtures", async (req, res) => {
   try {
     const today = new Date().toISOString().split("T")[0];
 
-    const response = await axios.get(`${BASE_URL}/fixtures`, {
-      headers: {
-        "x-apisports-key": API_KEY
-      },
-      params: {
-        date: today
+    const response = await axios.get(
+      "https://v3.football.api-sports.io/fixtures",
+      {
+        headers: {
+          "x-apisports-key": API_KEY
+        },
+        params: {
+          date: today
+        }
       }
-    });
+    );
 
     res.json(response.data);
 
@@ -39,13 +49,7 @@ app.get("/fixtures", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 10000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
-const PORT = process.env.PORT;
-
+// VERY IMPORTANT: Bind to 0.0.0.0
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
