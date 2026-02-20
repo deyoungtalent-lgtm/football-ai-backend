@@ -1,44 +1,52 @@
-const express = require("express");
-const axios = require("axios");
-require("dotenv").config();
-
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 10000;
-
-app.get("/", (req, res) => {
-  res.send("Football AI: Structural Mismatch Engine LIVE ✅");
-});
-
 app.get("/predictions", async (req, res) => {
   try {
-    const headers = { 
-      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY 
+    const headers = {
+      "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
     };
 
-    // Fetching data
-    const today = new Date();
-    const past = new Date();
-    past.setMonth(past.getMonth() - 3);
-
-    const dateFrom = past.toISOString().split("T")[0];
-    const dateTo = today.toISOString().split("T")[0];
-
+    // ===============================
+    // FETCH UPCOMING MATCHES
+    // ===============================
     const upcomingRes = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
       { headers }
     );
 
-    const finishedRes = await axios.get(
-      `https://api.football-data.org/v4/matches?status=FINISHED&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-      { headers }
-    );
-
     const upcomingMatches = upcomingRes.data.matches.slice(0, 15);
-    const finishedMatches = finishedRes.data.matches;
 
-    // Helpers
+    // ===============================
+    // FETCH LAST 90 DAYS (10-DAY CHUNKS)
+    // ===============================
+    let finishedMatches = [];
+    let endDate = new Date();
+
+    for (let i = 0; i < 9; i++) {
+      let startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - 10);
+
+      const dateFrom = startDate.toISOString().split("T")[0];
+      const dateTo = endDate.toISOString().split("T")[0];
+
+      const response = await axios.get(
+        `https://api.football-data.org/v4/matches?status=FINISHED&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+        { headers }
+      );
+
+      finishedMatches.push(...response.data.matches);
+
+      endDate = new Date(startDate);
+    }
+
+    // ===============================
+    // REMOVE DUPLICATES
+    // ===============================
+    finishedMatches = [
+      ...new Map(finishedMatches.map(m => [m.id, m])).values()
+    ];
+
+    // ===============================
+    // HELPERS (UNCHANGED LOGIC)
+    // ===============================
     const getLast5 = (teamId) =>
       finishedMatches
         .filter(m => m.homeTeam.id === teamId || m.awayTeam.id === teamId)
@@ -76,6 +84,9 @@ app.get("/predictions", async (req, res) => {
       return { wins, losses };
     };
 
+    // ===============================
+    // PREDICTION ENGINE (UNCHANGED)
+    // ===============================
     const predictions = upcomingMatches.map(match => {
 
       const hId = match.homeTeam.id;
@@ -87,7 +98,6 @@ app.get("/predictions", async (req, res) => {
       const homeH2H = analyzeTeam(hId, getH2H(hId, aId));
       const awayH2H = analyzeTeam(aId, getH2H(hId, aId));
 
-      // ✅ STRICT REQUIREMENT LOGIC
       const homeMeetsCriteria =
         homeForm.wins >= 3 &&
         homeH2H.wins >= 3 &&
@@ -133,9 +143,4 @@ app.get("/predictions", async (req, res) => {
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Structural Mismatch in Data Fetching" });
   }
-});
-
-// Render binding
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Ruthless Engine running on port ${PORT}`);
 });
