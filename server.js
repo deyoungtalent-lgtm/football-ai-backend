@@ -1,3 +1,20 @@
+const express = require("express");
+const axios = require("axios");
+require("dotenv").config();
+
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 10000;
+
+app.get("/", (req, res) => {
+  res.send("Football AI: Structural Mismatch Engine LIVE ✅");
+});
+
+// ======================================================
+// PREDICTIONS ROUTE
+// ======================================================
+
 app.get("/predictions", async (req, res) => {
   try {
     const headers = {
@@ -37,15 +54,13 @@ app.get("/predictions", async (req, res) => {
       endDate = new Date(startDate);
     }
 
-    // ===============================
-    // REMOVE DUPLICATES
-    // ===============================
+    // Remove duplicates
     finishedMatches = [
       ...new Map(finishedMatches.map(m => [m.id, m])).values()
     ];
 
     // ===============================
-    // HELPERS (UNCHANGED LOGIC)
+    // HELPERS
     // ===============================
     const getLast5 = (teamId) =>
       finishedMatches
@@ -143,4 +158,12 @@ app.get("/predictions", async (req, res) => {
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Structural Mismatch in Data Fetching" });
   }
+});
+
+// ======================================================
+// START SERVER
+// ======================================================
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Ruthless Engine running on port ${PORT}`);
 });
