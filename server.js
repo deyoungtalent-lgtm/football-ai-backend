@@ -7,10 +7,12 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
+// Home route
 app.get("/", (req, res) => {
   res.send("Football AI Backend Running");
 });
 
+// Matches route
 app.get("/matches", async (req, res) => {
   try {
     const response = await axios.get(
@@ -23,6 +25,7 @@ app.get("/matches", async (req, res) => {
     );
 
     res.json(response.data);
+
   } catch (error) {
     console.error(error.response?.data || error.message);
     res.status(500).json({
@@ -31,9 +34,7 @@ app.get("/matches", async (req, res) => {
   }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Predictions route
 app.get("/predictions", async (req, res) => {
   try {
     const response = await axios.get(
@@ -76,4 +77,9 @@ app.get("/predictions", async (req, res) => {
     console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Prediction failed" });
   }
+});
+
+// Always LAST
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });
