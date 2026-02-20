@@ -10,44 +10,89 @@ app.use(express.static("public"));
 const PORT = process.env.PORT || 10000;
 
 /* =========================
-   HELPER FUNCTION
+   AI ENGINE V6
 ========================= */
 
-function calculateWins(teamId, finishedMatches) {
+function calculateTeamMetrics(teamId, finishedMatches) {
   const teamMatches = finishedMatches
     .filter(m =>
       m.homeTeam.id === teamId || m.awayTeam.id === teamId
     )
     .slice(-5);
 
-  let wins = 0;
+  if (teamMatches.length === 0) {
+    return {
+      avgScored: 1,
+      avgConceded: 1,
+      goalDiff: 0
+    };
+  }
+
+  let goalsScored = 0;
+  let goalsConceded = 0;
 
   teamMatches.forEach(match => {
     const isHome = match.homeTeam.id === teamId;
-    const homeGoals = match.score.fullTime.home;
-    const awayGoals = match.score.fullTime.away;
 
-    if (
-      (isHome && homeGoals > awayGoals) ||
-      (!isHome && awayGoals > homeGoals)
-    ) {
-      wins++;
+    const homeGoals = match.score.fullTime.home ?? 0;
+    const awayGoals = match.score.fullTime.away ?? 0;
+
+    if (isHome) {
+      goalsScored += homeGoals;
+      goalsConceded += awayGoals;
+    } else {
+      goalsScored += awayGoals;
+      goalsConceded += homeGoals;
     }
   });
 
-  return wins;
+  const avgScored = goalsScored / teamMatches.length;
+  const avgConceded = goalsConceded / teamMatches.length;
+  const goalDiff = avgScored - avgConceded;
+
+  return { avgScored, avgConceded, goalDiff };
+}
+
+function calculateProbabilities(home, away) {
+  const HOME_ADVANTAGE = 0.25;
+
+  const homeAttack = home.avgScored;
+  const homeDefense = home.avgConceded;
+  const awayAttack = away.avgScored;
+  const awayDefense = away.avgConceded;
+
+  const homeExpectedGoals =
+    (homeAttack + awayDefense) / 2 + HOME_ADVANTAGE;
+
+  const awayExpectedGoals =
+    (awayAttack + homeDefense) / 2;
+
+  const total = homeExpectedGoals + awayExpectedGoals;
+
+  let homeProb = (homeExpectedGoals / total) * 100;
+  let awayProb = (awayExpectedGoals / total) * 100;
+
+  let drawProb = 100 - (homeProb + awayProb);
+
+  if (drawProb < 0) drawProb = 10;
+
+  return {
+    homeProb: Math.round(homeProb),
+    awayProb: Math.round(awayProb),
+    drawProb: Math.round(drawProb),
+    homeExpectedGoals: homeExpectedGoals.toFixed(2),
+    awayExpectedGoals: awayExpectedGoals.toFixed(2)
+  };
 }
 
 /* =========================
    ROUTES
 ========================= */
 
-// Homepage
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Matches Route
 app.get("/matches", async (req, res) => {
   try {
     const response = await axios.get(
@@ -62,25 +107,21 @@ app.get("/matches", async (req, res) => {
     res.json(response.data);
 
   } catch (error) {
-    console.error(error.response?.data || error.message);
     res.status(500).json({ error: "Failed to fetch matches" });
   }
 });
 
-// Predictions Route (FREE PLAN SAFE)
 app.get("/predictions", async (req, res) => {
   try {
     const headers = {
       "X-Auth-Token": process.env.FOOTBALL_DATA_KEY
     };
 
-    // Upcoming matches
     const upcomingResponse = await axios.get(
       "https://api.football-data.org/v4/matches?status=SCHEDULED",
       { headers }
     );
 
-    // Finished matches
     const finishedResponse = await axios.get(
       "https://api.football-data.org/v4/matches?status=FINISHED",
       { headers }
@@ -91,35 +132,53 @@ app.get("/predictions", async (req, res) => {
 
     const predictions = upcomingMatches.map(match => {
 
-      const homeWins = calculateWins(match.homeTeam.id, finishedMatches);
-      const awayWins = calculateWins(match.awayTeam.id, finishedMatches);
+      const homeStats = calculateTeamMetrics(
+        match.homeTeam.id,
+        finishedMatches
+      );
+
+      const awayStats = calculateTeamMetrics(
+        match.awayTeam.id,
+        finishedMatches
+      );
+
+      const probs = calculateProbabilities(homeStats, awayStats);
 
       let prediction = "Draw";
-      let confidence = "50%";
+      let confidence = probs.drawProb;
 
-      if (homeWins > awayWins) {
+      if (probs.homeProb > probs.awayProb &&
+          probs.homeProb > probs.drawProb) {
         prediction = "Home Win";
-        confidence = "65%";
-      } else if (awayWins > homeWins) {
+        confidence = probs.homeProb;
+      }
+
+      if (probs.awayProb > probs.homeProb &&
+          probs.awayProb > probs.drawProb) {
         prediction = "Away Win";
-        confidence = "65%";
+        confidence = probs.awayProb;
       }
 
       return {
         competition: match.competition.name,
         homeTeam: match.homeTeam.name,
         awayTeam: match.awayTeam.name,
-        homeLast5Wins: homeWins,
-        awayLast5Wins: awayWins,
+        homeExpectedGoals: probs.homeExpectedGoals,
+        awayExpectedGoals: probs.awayExpectedGoals,
+        probabilities: {
+          homeWin: probs.homeProb + "%",
+          draw: probs.drawProb + "%",
+          awayWin: probs.awayProb + "%"
+        },
         prediction,
-        confidence
+        confidence: confidence + "%"
       };
     });
 
     res.json(predictions);
 
   } catch (error) {
-    console.error("FULL ERROR:", error.response?.data || error.message);
+    console.error(error.response?.data || error.message);
     res.status(500).json({
       error: "Prediction failed",
       details: error.response?.data || error.message
@@ -128,5 +187,5 @@ app.get("/predictions", async (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`AI Server running on port ${PORT}`);
 });
